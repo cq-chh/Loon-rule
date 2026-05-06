@@ -1,29 +1,28 @@
-// Loon http-response 脚本
-// 功能：移除广告脚本、注入去广告样式、自动跳转弹窗页面
+ * pornhub 去广告脚本（优化版）
+ * 功能：移除广告脚本、注入去广告 CSS、处理弹窗跳转
+ * 适用：通过 http-response 方式注入 HTML 页面
+ */
 
 let body = $response.body;
 
 // =========================
-// 1. 移除带 "ads_batch" 的脚本标签（src 或内联内容）
+// 1. 高效移除广告脚本（合并正则，减少回溯）
 // =========================
-// 移除 src 中包含 ads_batch 的脚本
+
+// 1.1 移除 src 属性中包含 ads_batch 的脚本标签（支持多种属性顺序）
 body = body.replace(
-  /<script\s+[^>]*src\s*=\s*["'][^"']*ads_batch[^"']*["'][^>]*>\s*<\/script>/gi,
+  /<script\s+[^>]*\bsrc\s*=\s*["'][^"']*ads_batch[^"']*["'][^>]*>\s*<\/script>/gi,
   ''
 );
-// 移除内联脚本中包含 ads_batch 的脚本（跨行匹配）
+
+// 1.2 移除内联脚本（包含 ads_batch 关键字）—— 使用单次遍历 + 回调，避免正则灾难性回溯
 body = body.replace(
-  /<script[^>]*>([\s\S]*?)<\/script>/gi,
-  function(match, content) {
-    if (content && /\bads_batch\b/i.test(content)) {
-      return '';
-    }
-    return match;
-  }
+  /<script\b[^>]*>([\s\S]*?)<\/script>/gi,
+  (match, content) => content && /\bads_batch\b/i.test(content) ? '' : match
 );
 
 // =========================
-// 2. 注入去广告 CSS（与原始样式保持一致，并避免重复注入）
+// 2. 注入去广告 CSS（防重复 + 精简样式）
 // =========================
 const css = `
 /* Loon Adblock Inject */
@@ -61,48 +60,41 @@ a[href*='livehd'],
 }
 `;
 
-// 防止重复注入（检查是否已有标记）
-if (!body.includes("/* Loon Adblock Inject */")) {
-  body = body.replace(
-    /<\/head>/i,
-    `<style>${css}</style></head>`
-  );
+// 避免重复注入（检查标记更可靠）
+if (!body.includes('/* Loon Adblock Inject */')) {
+  body = body.replace(/<\/head>/i, `<style>${css}</style></head>`);
 }
 
 // =========================
-// 3. 处理弹窗跳转（带 clearModalCookie 的链接）
+// 3. 弹窗自动跳转（更安全的注入脚本 + 降级处理）
 // =========================
-// 方式1：移除所有 onclick 属性中含有 clearModalCookie 的 a 标签的 onclick，避免阻止跳转
-body = body.replace(
-  /(<a[^>]*?)onclick\s*=\s*["'][^"']*clearModalCookie[^"']*["']([^>]*?>)/gi,
-  '$1$2'
-);
-
-// 方式2：对于无法清理 onclick 的情况，直接提取 href 并延迟跳转（通过注入脚本实现）
-// 注意：Loon 不能直接执行 setTimeout 和修改 window.location，
-// 因此需要注入一段 JavaScript 到页面中，让浏览器自行执行跳转。
 const redirectScript = `
 <script>
 (function() {
-  // 查找包含 clearModalCookie 的链接
-  var elems = document.querySelectorAll('[onclick*="clearModalCookie"]');
-  if (elems.length > 1 && elems[1].href) {
-    window.location = elems[1].href;
-  } else {
-    // 备用：查找任意带有该 onclick 的 a 标签
-    var links = document.querySelectorAll('a[onclick*="clearModalCookie"]');
-    if (links.length && links[0].href) {
-      window.location = links[0].href;
-    }
+  // 查找所有带有 onclick="...clearModalCookie..." 的元素
+  var candidates = document.querySelectorAll('[onclick*="clearModalCookie"]');
+  var targetLink = null;
+  // 原脚本逻辑：取索引为 1 的元素（第二个）
+  if (candidates.length > 1 && candidates[1].href) {
+    targetLink = candidates[1];
+  } else if (candidates.length > 0 && candidates[0].href) {
+    // 降级：取第一个有效的 a 标签
+    targetLink = candidates[0];
+  }
+  if (targetLink && targetLink.href) {
+    // 使用 location.replace 避免产生历史记录，更干净
+    window.location.replace(targetLink.href);
   }
 })();
 </script>
 `;
 
-// 将跳转脚本注入到 </body> 之前（延迟执行，避免阻塞页面渲染）
-body = body.replace(
-  /<\/body>/i,
-  redirectScript + '</body>'
-);
+// 注入脚本到 </body> 前（比插入 head 更可靠，保证 DOM 加载完毕）
+if (body.includes('</body>')) {
+  body = body.replace(/<\/body>/i, redirectScript + '</body>');
+} else {
+  // 极端情况：没有 body 标签则追加到末尾
+  body += redirectScript;
+}
 
 $done({ body });
