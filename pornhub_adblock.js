@@ -2,9 +2,8 @@ let body = $response.body;
 
 /**
  * =========================
- * 1. 移除外部广告脚本
- * 只删除 src 包含 ads_batch / doubleclick / trafficjunky 的 <script>
- * 避免删除内联 JS
+ * 1. 删除外部广告脚本
+ * 仅删除 src 包含广告关键字
  */
 body = body.replace(
   /<script[^>]*\bsrc\s*=\s*["'][^"']*(ads_batch|doubleclick|trafficjunky|exoclick)[^"']*["'][^>]*>\s*<\/script>/gi,
@@ -13,8 +12,8 @@ body = body.replace(
 
 /**
  * =========================
- * 2. 注入去广告 CSS
- * 精简样式，仅隐藏广告容器，不碰播放器
+ * 2. 注入精简去广告 CSS
+ * 只隐藏广告容器，不碰播放器
  */
 const css = `
 /* Loon Adblock Inject */
@@ -45,8 +44,7 @@ if (!body.includes('/* Loon Adblock Inject */')) {
 
 /**
  * =========================
- * 3. 弹窗处理
- * 只删除 onclick="clearModalCookie"，不依赖 JS 自动跳转
+ * 3. 删除弹窗阻断 onclick
  */
 body = body.replace(
   /(<a[^>]*?)onclick\s*=\s*["'][^"']*clearModalCookie[^"']*["']([^>]*>)/gi,
