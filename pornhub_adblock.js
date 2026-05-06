@@ -67,7 +67,7 @@ a[href*="ads"] {
 if (!body.includes("/* Loon Adblock Inject */")) {
   body = body.replace(
     /<\/head>/i,
-    <style>/* Loon Adblock Inject */${css}</style></head>
+    `<style>/* Loon Adblock Inject */${css}</style></head>`
   );
 }
 
